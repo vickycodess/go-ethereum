@@ -127,8 +127,9 @@ type worker struct {
 	eth    Backend
 	chain  *core.BlockChain
 
-	gasFloor uint64
-	gasCeil  uint64
+	gasFloor        uint64
+	gasCeil         uint64
+	maxTransactions int
 
 	// Subscriptions
 	mux          *event.TypeMux
@@ -178,7 +179,7 @@ type worker struct {
 	resubmitHook func(time.Duration, time.Duration) // Method to call upon updating resubmitting interval.
 }
 
-func newWorker(config *params.ChainConfig, engine consensus.Engine, eth Backend, mux *event.TypeMux, recommit time.Duration, gasFloor, gasCeil uint64, isLocalBlock func(*types.Block) bool) *worker {
+func newWorker(config *params.ChainConfig, engine consensus.Engine, eth Backend, mux *event.TypeMux, recommit time.Duration, gasFloor, gasCeil uint64, maxTransactions int, isLocalBlock func(*types.Block) bool) *worker {
 	worker := &worker{
 		config:             config,
 		engine:             engine,
@@ -187,6 +188,7 @@ func newWorker(config *params.ChainConfig, engine consensus.Engine, eth Backend,
 		chain:              eth.BlockChain(),
 		gasFloor:           gasFloor,
 		gasCeil:            gasCeil,
+		maxTransactions:    maxTransactions,
 		isLocalBlock:       isLocalBlock,
 		localUncles:        make(map[common.Hash]*types.Block),
 		remoteUncles:       make(map[common.Hash]*types.Block),
@@ -404,9 +406,6 @@ func (w *worker) mainLoop() {
 	defer w.chainHeadSub.Unsubscribe()
 	defer w.chainSideSub.Unsubscribe()
 
-	// TODO this is temporarily set to 4, make this not hard coded.
-	m := 4
-
 	for {
 		select {
 		case req := <-w.newWorkCh:
@@ -468,7 +467,7 @@ func (w *worker) mainLoop() {
 					txs[acc] = append(txs[acc], tx)
 				}
 				txset := types.NewTransactionsByPriceAndNonce(w.current.signer, txs)
-				w.commitTransactions(m, txset, coinbase, nil)
+				w.commitTransactions(txset, coinbase, nil)
 				w.updateSnapshot()
 			} else {
 				// If we're mining, but nothing is being processed, wake on new transactions
@@ -706,7 +705,7 @@ func (w *worker) commitTransaction(tx *types.Transaction, coinbase common.Addres
 }
 
 // m is the number of transactions to commit. If m is a negative number, commit all transactions
-func (w *worker) commitTransactions(m int, txs *types.TransactionsByPriceAndNonce, coinbase common.Address, interrupt *int32) bool {
+func (w *worker) commitTransactions(txs *types.TransactionsByPriceAndNonce, coinbase common.Address, interrupt *int32) bool {
 
 	// Short circuit if current is nil
 	if w.current == nil {
@@ -719,8 +718,10 @@ func (w *worker) commitTransactions(m int, txs *types.TransactionsByPriceAndNonc
 
 	var coalescedLogs []*types.Log
 
-	i := 0
-	for i <= m || m < 0 {
+	i := 1
+	// if we haven't committed enough transactions already, or if we have no
+	// limit on number of transaction (ie -1), then commit more
+	for i <= w.maxTransactions || w.maxTransactions < 0 {
 		i += 1 // increment our counter
 
 		// In the following three cases, we will interrupt the execution of the transaction.
@@ -827,9 +828,6 @@ func (w *worker) commitTransactions(m int, txs *types.TransactionsByPriceAndNonc
 func (w *worker) commitNewWork(interrupt *int32, noempty bool, timestamp int64) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
-
-	// TODO this is temporarily set to 4, make this not hard coded.
-	m := 4
 
 	tstart := time.Now()
 	parent := w.chain.CurrentBlock()
@@ -940,13 +938,13 @@ func (w *worker) commitNewWork(interrupt *int32, noempty bool, timestamp int64) 
 	}
 	if len(localTxs) > 0 {
 		txs := types.NewTransactionsByPriceAndNonce(w.current.signer, localTxs)
-		if w.commitTransactions(m, txs, w.coinbase, interrupt) {
+		if w.commitTransactions(txs, w.coinbase, interrupt) {
 			return
 		}
 	}
 	if len(remoteTxs) > 0 {
 		txs := types.NewTransactionsByPriceAndNonce(w.current.signer, remoteTxs)
-		if w.commitTransactions(m, txs, w.coinbase, interrupt) {
+		if w.commitTransactions(txs, w.coinbase, interrupt) {
 			return
 		}
 	}

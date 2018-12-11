@@ -360,6 +360,12 @@ var (
 		Usage: "Minimum gas price for mining a transaction (deprecated, use --miner.gasprice)",
 		Value: eth.DefaultConfig.MinerGasPrice,
 	}
+	MinerMFlag = cli.IntFlag{
+		Name:  "miner.maxblocktransactions",
+		Usage: "Number of maximum transactions per block. (-1 == infinite, 0 is a bit silly aint ?)",
+		Value: -1,
+	}
+
 	MinerEtherbaseFlag = cli.StringFlag{
 		Name:  "miner.etherbase",
 		Usage: "Public address for block mining rewards (default = first account)",
@@ -1227,6 +1233,9 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *eth.Config) {
 	}
 	if ctx.GlobalIsSet(MinerNoVerfiyFlag.Name) {
 		cfg.MinerNoverify = ctx.Bool(MinerNoVerfiyFlag.Name)
+	}
+	if ctx.GlobalIsSet(MinerMFlag.Name) {
+		cfg.MinerMaxTransactions = ctx.GlobalInt(MinerMFlag.Name)
 	}
 	if ctx.GlobalIsSet(VMEnableDebugFlag.Name) {
 		// TODO(fjl): force-enable this in --dev mode
