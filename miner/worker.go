@@ -404,6 +404,9 @@ func (w *worker) mainLoop() {
 	defer w.chainHeadSub.Unsubscribe()
 	defer w.chainSideSub.Unsubscribe()
 
+	// TODO this is temporarily set to 4, make this not hard coded.
+	m := 4
+
 	for {
 		select {
 		case req := <-w.newWorkCh:
@@ -465,7 +468,7 @@ func (w *worker) mainLoop() {
 					txs[acc] = append(txs[acc], tx)
 				}
 				txset := types.NewTransactionsByPriceAndNonce(w.current.signer, txs)
-				w.commitTransactions(txset, coinbase, nil)
+				w.commitTransactions(m, txset, coinbase, nil)
 				w.updateSnapshot()
 			} else {
 				// If we're mining, but nothing is being processed, wake on new transactions
@@ -702,7 +705,9 @@ func (w *worker) commitTransaction(tx *types.Transaction, coinbase common.Addres
 	return receipt.Logs, nil
 }
 
-func (w *worker) commitTransactions(txs *types.TransactionsByPriceAndNonce, coinbase common.Address, interrupt *int32) bool {
+// m is the number of transactions to commit. If m is a negative number, commit all transactions
+func (w *worker) commitTransactions(m int, txs *types.TransactionsByPriceAndNonce, coinbase common.Address, interrupt *int32) bool {
+
 	// Short circuit if current is nil
 	if w.current == nil {
 		return true
@@ -714,7 +719,10 @@ func (w *worker) commitTransactions(txs *types.TransactionsByPriceAndNonce, coin
 
 	var coalescedLogs []*types.Log
 
-	for {
+	i := 0
+	for i <= m || m < 0 {
+		i += 1 // increment our counter
+
 		// In the following three cases, we will interrupt the execution of the transaction.
 		// (1) new head block event arrival, the interrupt signal is 1
 		// (2) worker start or restart, the interrupt signal is 1
@@ -819,6 +827,9 @@ func (w *worker) commitTransactions(txs *types.TransactionsByPriceAndNonce, coin
 func (w *worker) commitNewWork(interrupt *int32, noempty bool, timestamp int64) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
+
+	// TODO this is temporarily set to 4, make this not hard coded.
+	m := 4
 
 	tstart := time.Now()
 	parent := w.chain.CurrentBlock()
@@ -929,13 +940,13 @@ func (w *worker) commitNewWork(interrupt *int32, noempty bool, timestamp int64) 
 	}
 	if len(localTxs) > 0 {
 		txs := types.NewTransactionsByPriceAndNonce(w.current.signer, localTxs)
-		if w.commitTransactions(txs, w.coinbase, interrupt) {
+		if w.commitTransactions(m, txs, w.coinbase, interrupt) {
 			return
 		}
 	}
 	if len(remoteTxs) > 0 {
 		txs := types.NewTransactionsByPriceAndNonce(w.current.signer, remoteTxs)
-		if w.commitTransactions(txs, w.coinbase, interrupt) {
+		if w.commitTransactions(m, txs, w.coinbase, interrupt) {
 			return
 		}
 	}
