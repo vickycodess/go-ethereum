@@ -362,7 +362,7 @@ var (
 	}
 	MinerMFlag = cli.IntFlag{
 		Name:  "miner.maxblocktransactions",
-		Usage: "Number of maximum transactions per block. (-1 == infinite, 0 is a bit silly aint ?)",
+		Usage: "Number of maximum transactions per block. (-1 == infinite, 0 is a bit silly aint it?)",
 		Value: -1,
 	}
 
