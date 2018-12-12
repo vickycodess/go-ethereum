@@ -127,8 +127,9 @@ type worker struct {
 	eth    Backend
 	chain  *core.BlockChain
 
-	gasFloor uint64
-	gasCeil  uint64
+	gasFloor        uint64
+	gasCeil         uint64
+	maxTransactions int
 
 	// Subscriptions
 	mux          *event.TypeMux
@@ -178,7 +179,7 @@ type worker struct {
 	resubmitHook func(time.Duration, time.Duration) // Method to call upon updating resubmitting interval.
 }
 
-func newWorker(config *params.ChainConfig, engine consensus.Engine, eth Backend, mux *event.TypeMux, recommit time.Duration, gasFloor, gasCeil uint64, isLocalBlock func(*types.Block) bool) *worker {
+func newWorker(config *params.ChainConfig, engine consensus.Engine, eth Backend, mux *event.TypeMux, recommit time.Duration, gasFloor, gasCeil uint64, maxTransactions int, isLocalBlock func(*types.Block) bool) *worker {
 	worker := &worker{
 		config:             config,
 		engine:             engine,
@@ -187,6 +188,7 @@ func newWorker(config *params.ChainConfig, engine consensus.Engine, eth Backend,
 		chain:              eth.BlockChain(),
 		gasFloor:           gasFloor,
 		gasCeil:            gasCeil,
+		maxTransactions:    maxTransactions,
 		isLocalBlock:       isLocalBlock,
 		localUncles:        make(map[common.Hash]*types.Block),
 		remoteUncles:       make(map[common.Hash]*types.Block),
@@ -702,7 +704,9 @@ func (w *worker) commitTransaction(tx *types.Transaction, coinbase common.Addres
 	return receipt.Logs, nil
 }
 
+// m is the number of transactions to commit. If m is a negative number, commit all transactions
 func (w *worker) commitTransactions(txs *types.TransactionsByPriceAndNonce, coinbase common.Address, interrupt *int32) bool {
+
 	// Short circuit if current is nil
 	if w.current == nil {
 		return true
@@ -714,7 +718,12 @@ func (w *worker) commitTransactions(txs *types.TransactionsByPriceAndNonce, coin
 
 	var coalescedLogs []*types.Log
 
-	for {
+	i := 1
+	// if we haven't committed enough transactions already, or if we have no
+	// limit on number of transaction (ie -1), then commit more
+	for i <= w.maxTransactions || w.maxTransactions < 0 {
+		i += 1 // increment our counter
+
 		// In the following three cases, we will interrupt the execution of the transaction.
 		// (1) new head block event arrival, the interrupt signal is 1
 		// (2) worker start or restart, the interrupt signal is 1
