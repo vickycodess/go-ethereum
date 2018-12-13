@@ -39,7 +39,7 @@ use those environment variables.
 For example...
 
 ```sh
-GASLIMIT=4000000 THREADS=2 MAXTRANSACTIONS=4 start-1
+GASLIMIT=4000000 THREADS=2 MAXTRANSACTIONS=4 make start-1
 ```
 
 ### Attach
